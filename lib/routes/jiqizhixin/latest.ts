@@ -52,6 +52,7 @@ async function handler() {
                         title: titleEl?.textContent?.trim() ?? '',
                         time: timeEl?.textContent?.trim() ?? '',
                         tags: [...tagEls].map((t) => t.textContent?.trim() ?? ''),
+                        img: imgEl?.src ?? '',
                         uuid,
                     };
                 })
@@ -62,46 +63,14 @@ async function handler() {
         return list;
     });
 
-    const { page, destroy } = await getPlaywrightPage('about:blank', { noGoto: true });
-
-    const items = [];
-    for (const article of articles) {
-        // eslint-disable-next-line no-await-in-loop
-        const item = await cache.tryGet(`jiqizhixin:article:${article.uuid}`, async () => {
-            await page.goto(`${baseUrl}/articles/${article.uuid}`, { waitUntil: 'networkidle' });
-            await page.waitForTimeout(2000);
-
-            const detail = await page.evaluate(() => {
-                const bodyText = document.body.textContent ?? '';
-                const metaKeywords = document.querySelector('meta[name="keywords"]')?.getAttribute('content') ?? '';
-                const ogUrl = document.querySelector('meta[property="og:url"]')?.getAttribute('content') ?? '';
-                const authorEl = document.querySelector('[class*=author]');
-
-                const articleStart = bodyText.indexOf('原创\n');
-                const content = articleStart === -1 ? bodyText : bodyText.slice(articleStart + 3);
-
-                return {
-                    content,
-                    metaKeywords,
-                    ogUrl,
-                    author: authorEl?.textContent?.trim() || '机器之心',
-                };
-            });
-
-            return {
-                title: article.title,
-                description: detail.content.replaceAll('\n', '<br>'),
-                pubDate: parseDate(article.time),
-                link: detail.ogUrl || `${baseUrl}/articles/${article.uuid}`,
-                author: detail.author,
-                category: article.tags,
-            };
-        });
-
-        items.push(item);
-    }
-
-    await destroy();
+    const items = articles.map((article) => ({
+        title: article.title,
+        description: article.img ? `<img src="${article.img}" alt="${article.title}">` : article.title,
+        pubDate: parseDate(article.time),
+        link: `${baseUrl}/articles/${article.uuid}`,
+        category: article.tags,
+        author: '机器之心',
+    }));
 
     return {
         title: '机器之心 - 最新文章',
