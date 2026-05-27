@@ -33,6 +33,7 @@ async function handler() {
     const articles = await cache.tryGet('jiqizhixin:latest', async () => {
         const { page, destroy } = await getPlaywrightPage(baseUrl, {
             gotoConfig: { waitUntil: 'domcontentloaded' },
+            closeTimeout: 90000,
         });
 
         // Wait longer for React to render, up to 30s
