@@ -32,22 +32,34 @@ async function handler() {
 
     const articles = await cache.tryGet('jiqizhixin:latest', async () => {
         const { page, destroy } = await getPlaywrightPage(baseUrl, {
-            gotoConfig: { waitUntil: 'networkidle' },
+            gotoConfig: { waitUntil: 'domcontentloaded' },
         });
 
-        await page.waitForSelector('.home__article-item', { timeout: 15000 });
+        // Wait longer for React to render, up to 30s
+        try {
+            await page.waitForSelector('.home__article-item', { timeout: 30000 });
+        } catch {
+            // Check if anti-bot page appeared
+            const title = await page.title();
+            if (title.includes('数据服务')) {
+                await destroy();
+                throw new Error('Anti-bot page detected, jiqizhixin blocked HF server IP');
+            }
+            // Try waiting more
+            await page.waitForTimeout(10000);
+        }
 
         const list = await page.evaluate(() => {
             const items = document.querySelectorAll('.home__article-item');
-
-            return [...items]
-                .map((item) => {
-                    const titleEl = item.querySelector('.home__article-item__title');
-                    const timeEl = item.querySelector('.home__article-item__time');
-                    const tagEls = item.querySelectorAll('.home__article-item__tag-item');
-                    const imgEl = item.querySelector('img');
+            if (items.length === 0) {
+                // Fallback: try article cards on /articles page style
+                const cards = document.querySelectorAll('.article-card');
+                return [...cards].map((card) => {
+                    const titleEl = card.querySelector('.article-card__title');
+                    const timeEl = card.querySelector('.article-card__time');
+                    const tagEls = card.querySelectorAll('.article-card__tags div');
+                    const imgEl = card.querySelector('img');
                     const uuid = imgEl?.src?.match(/cover_image\/([a-f0-9-]+)\//)?.[1] ?? '';
-
                     return {
                         title: titleEl?.textContent?.trim() ?? '',
                         time: timeEl?.textContent?.trim() ?? '',
@@ -55,8 +67,23 @@ async function handler() {
                         img: imgEl?.src ?? '',
                         uuid,
                     };
-                })
-                .filter((a) => a.uuid);
+                }).filter((a) => a.uuid);
+            }
+
+            return [...items].map((item) => {
+                const titleEl = item.querySelector('.home__article-item__title');
+                const timeEl = item.querySelector('.home__article-item__time');
+                const tagEls = item.querySelectorAll('.home__article-item__tag-item');
+                const imgEl = item.querySelector('img');
+                const uuid = imgEl?.src?.match(/cover_image\/([a-f0-9-]+)\//)?.[1] ?? '';
+                return {
+                    title: titleEl?.textContent?.trim() ?? '',
+                    time: timeEl?.textContent?.trim() ?? '',
+                    tags: [...tagEls].map((t) => t.textContent?.trim() ?? ''),
+                    img: imgEl?.src ?? '',
+                    uuid,
+                };
+            }).filter((a) => a.uuid);
         });
 
         await destroy();
